@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en" style="background: transparent !important;">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rebel Roleplay Donator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Manrope:wght@400;500;600;700;800&family=Oswald:wght@500;600;700&family=Pacifico&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body style="background: transparent !important;">
+    <div id="app" class="app hidden" data-theme="rebel">
+        <div class="shell">
+            <div class="fx-grain" aria-hidden="true"></div>
+            <div class="fx-stars" aria-hidden="true"></div>
+            <div class="fx-chrome" aria-hidden="true"></div>
+            <div class="fx-moon" aria-hidden="true"></div>
+            <div class="fx-skyline" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="fx-palms" aria-hidden="true">
+                <svg viewBox="0 0 120 140" fill="none">
+                    <path d="M38 138V72" stroke="url(#palmChrome)" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M82 138V78" stroke="url(#palmChrome)" stroke-width="3.2" stroke-linecap="round"/>
+                    <path d="M38 74C8 68 2 40 18 22c8 22 16 34 20 52z" fill="url(#palmLeaf)"/>
+                    <path d="M38 74c32-8 40-36 26-56-6 24-16 38-26 56z" fill="url(#palmLeaf)"/>
+                    <path d="M38 70c-18 4-38-10-42-32 16 8 30 20 42 32z" fill="url(#palmLeaf)"/>
+                    <path d="M38 70c20 2 40-14 46-34-16 10-30 22-46 34z" fill="url(#palmLeaf)"/>
+                    <path d="M82 80C58 74 52 50 64 34c6 18 12 28 18 46z" fill="url(#palmLeaf)"/>
+                    <path d="M82 80c26-6 32-30 22-48-4 20-12 32-22 48z" fill="url(#palmLeaf)"/>
+                    <path d="M82 76c-14 4-30-8-34-24 12 6 22 14 34 24z" fill="url(#palmLeaf)"/>
+                    <defs>
+                        <linearGradient id="palmChrome" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#f7fbff"/>
+                            <stop offset="100%" stop-color="#8a96a0"/>
+                        </linearGradient>
+                        <linearGradient id="palmLeaf" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#f4feff"/>
+                            <stop offset="55%" stop-color="#c5d0d6"/>
+                            <stop offset="100%" stop-color="#7e8a92"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            <div class="fx-swirl" aria-hidden="true"></div>
+            <div class="fx-sparkles" aria-hidden="true"></div>
+            <div class="glow glow-a" aria-hidden="true"></div>
+            <div class="glow glow-b" aria-hidden="true"></div>
+            <div class="glow glow-c" aria-hidden="true"></div>
+            <aside class="sidebar">
+                <div class="brand-block">
+                    <img class="logo" src="images/rebel-logo.jpg" alt="Rebel Roleplay" />
+                    <div class="brand-copy">
+                        <div class="brand-kicker">Rebel Roleplay</div>
+                        <div class="brand-name">DONATOR STORE</div>
+                    </div>
+                </div>
+                <nav class="side-nav" id="tabs"></nav>
+                <button class="stash-btn" id="stashBtn" type="button">
+                    <span class="stash-star">★</span>
+                    Bought items? Open stash!
+                </button>
+            </aside>
+            <div class="main-col">
+                <header class="topbar">
+                    <div class="mode-pills">
+                        <button class="mode-btn active" type="button" id="modeShop">Shop</button>
+                        <button class="mode-btn" type="button" id="modeInventory">Stash</button>
+                    </div>
+                    <div class="top-tools">
+                        <div class="coin-chip" id="coinChip"></div>
+                        <button class="btn gold" id="headerRedeem" type="button">REDEEM</button>
+                        <div class="profile" id="profile"></div>
+                        <button class="keychip" id="closeHint" type="button">F11</button>
+                    </div>
+                </header>
+                <main class="content" id="content"></main>
+            </div>
+            <div id="toasts" class="toasts"></div>
+        </div>
+    </div>
+
+    <div id="modal" class="modal hidden"></div>
+    <script src="app.js"></script>
+</body>
+</html>
