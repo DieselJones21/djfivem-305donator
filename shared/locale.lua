@@ -62,5 +62,11 @@ Locale = {
     tier_exists = 'A vehicle tier with that id already exists.',
     invalid_tier = 'That vehicle tier was not found.',
     last_tier = 'Keep at least one vehicle tier.',
+    weapon_class_saved = 'Weapon class saved.',
+    weapon_class_removed = 'Weapon class removed. Listings were moved to another class.',
+    invalid_weapon_class_label = 'Enter a weapon class name.',
+    weapon_class_exists = 'A weapon class with that id already exists.',
+    invalid_weapon_class = 'That weapon class was not found.',
+    last_weapon_class = 'Keep at least one weapon class.',
     redeem_hint = 'Press F11 → Redeem, or /redeem tbx-xxxxxxxx',
 }

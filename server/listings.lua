@@ -149,11 +149,12 @@ function Listings.Normalize(payload, existingId)
         grantType = 'mixed'
     end
     local usesTiers = Shop.UsesTiers(category)
+    local group = Shop.TierGroup(category)
     local tier = trim(payload.tier)
     if usesTiers then
-        tier = NormalizeTier(tier)
-        if not Shop.IsTier(tier) then
-            tier = Shop.DefaultTier()
+        tier = NormalizeTier(tier, group)
+        if not Shop.IsTier(tier, group) then
+            tier = Shop.DefaultTier(group)
         end
     else
         tier = nil
@@ -274,7 +275,7 @@ function Listings.FromRow(row)
     local item = {
         id = row.item_id,
         category = row.category,
-        tier = row.tier and NormalizeTier(row.tier) or nil,
+        tier = row.tier and NormalizeTier(row.tier, Shop.TierGroup(row.category)) or nil,
         label = row.label,
         description = row.description,
         price = tonumber(row.price) or 0,
@@ -359,14 +360,19 @@ function Listings.EditorRows()
 end
 
 function Listings.ReloadShop()
-    Shop.Apply(DB.GetShopMeta('category'), DB.GetShopMeta('tier'))
+    Shop.Apply(DB.GetShopMeta('category'), DB.GetShopMeta('tier'), DB.GetShopMeta('weapontier'))
     TiersRefresh()
     Listings.Rebuild()
 end
 
 local function nextSort(kind)
     local maxSort = 0
-    local rows = kind == 'tier' and Shop.tiers or Shop.categories
+    local rows = Shop.categories
+    if kind == 'tier' then
+        rows = Shop.tiers
+    elseif kind == 'weapontier' then
+        rows = Shop.weaponTiers
+    end
     for i = 1, #(rows or {}) do
         if (rows[i].sort or 0) > maxSort then
             maxSort = rows[i].sort
@@ -401,11 +407,20 @@ function Listings.SaveCategory(payload)
         gated = 'none'
     end
     local usesTiers = toBool(payload.usesTiers)
+    local tierGroup = payload.tierGroup
     if existing and existing.builtin then
         grantType = existing.grantType
         usesTiers = existing.usesTiers
-    elseif grantType == 'vehicle' then
+        tierGroup = existing.tierGroup
+    elseif grantType == 'vehicle' or grantType == 'weapon' then
         usesTiers = payload.usesTiers == nil and true or usesTiers
+    end
+    if grantType == 'weapon' then
+        tierGroup = 'weapon'
+    elseif usesTiers then
+        tierGroup = (tierGroup == 'weapon') and 'weapon' or 'vehicle'
+    else
+        tierGroup = nil
     end
     local timed = existing and existing.timed or toBool(payload.timed)
     if existing and existing.builtin then
@@ -425,6 +440,7 @@ function Listings.SaveCategory(payload)
         label = label,
         grantType = grantType,
         usesTiers = usesTiers,
+        tierGroup = tierGroup,
         gated = gated,
         timed = timed,
         builtin = existing and existing.builtin or false,
@@ -488,18 +504,20 @@ function Listings.SaveTier(payload)
     if type(payload) ~= 'table' then
         return nil, 'invalid'
     end
+    local group = Shop.NormalizeGroup(payload.group or payload.tierGroup)
+    local kind = Shop.MetaKind(group)
     local existingId = trim(payload.id)
-    local existing = existingId ~= '' and Shop.GetTier(existingId) or nil
+    local existing = existingId ~= '' and Shop.GetTier(existingId, group) or nil
     local label = trim(payload.label)
     if label == '' then
-        return nil, 'invalid_tier_label'
+        return nil, group == 'weapon' and 'invalid_weapon_class_label' or 'invalid_tier_label'
     end
     local id = existing and existing.id or Shop.Slug(payload.newId or label, 'tier')
     if id == '' then
-        return nil, 'invalid_tier_label'
+        return nil, group == 'weapon' and 'invalid_weapon_class_label' or 'invalid_tier_label'
     end
-    if not existing and Shop.GetTier(id) then
-        return nil, 'tier_exists'
+    if not existing and Shop.GetTier(id, group) then
+        return nil, group == 'weapon' and 'weapon_class_exists' or 'tier_exists'
     end
     local enabled = payload.enabled
     if enabled == nil then
@@ -515,20 +533,22 @@ function Listings.SaveTier(payload)
         label = label,
         builtin = existing and existing.builtin or false,
         enabled = enabled,
-        sort = existing and existing.sort or nextSort('tier'),
+        sort = existing and existing.sort or nextSort(kind),
     }
-    DB.UpsertShopMeta('tier', row)
+    DB.UpsertShopMeta(kind, row)
     Listings.ReloadShop()
-    return Shop.GetTier(id)
+    return Shop.GetTier(id, group)
 end
 
-function Listings.DeleteTier(id)
+function Listings.DeleteTier(id, group)
     id = trim(id)
-    local tier = Shop.GetTier(id)
+    group = Shop.NormalizeGroup(group)
+    local kind = Shop.MetaKind(group)
+    local tier = Shop.GetTier(id, group)
     if not tier then
-        return nil, 'invalid_tier'
+        return nil, group == 'weapon' and 'invalid_weapon_class' or 'invalid_tier'
     end
-    local enabled = Shop.EnabledTiers()
+    local enabled = Shop.EnabledTiers(group)
     local remaining = 0
     for i = 1, #enabled do
         if enabled[i].id ~= id then
@@ -536,9 +556,9 @@ function Listings.DeleteTier(id)
         end
     end
     if remaining < 1 then
-        return nil, 'last_tier'
+        return nil, group == 'weapon' and 'last_weapon_class' or 'last_tier'
     end
-    local fallback = Shop.DefaultTier()
+    local fallback = Shop.DefaultTier(group)
     if fallback == id then
         for i = 1, #enabled do
             if enabled[i].id ~= id then
@@ -547,17 +567,20 @@ function Listings.DeleteTier(id)
             end
         end
     end
-    if DB.CountListingsInTier(id) > 0 then
-        DB.ReassignListingTier(id, fallback)
+    local categories = Shop.CategoryIdsForGroup(group)
+    if DB.CountListingsInTier(id, categories) > 0 then
+        DB.ReassignListingTier(id, fallback, categories)
     end
-    DB.DeleteShopMeta('tier', id)
+    DB.DeleteShopMeta(kind, id)
     Listings.ReloadShop()
     return true, fallback
 end
 
-function Listings.MoveTier(id, direction)
+function Listings.MoveTier(id, direction, group)
     id = trim(id)
-    local list = Shop.tiers or {}
+    group = Shop.NormalizeGroup(group)
+    local kind = Shop.MetaKind(group)
+    local list = Shop.TiersOf(group)
     local index
     for i = 1, #list do
         if list[i].id == id then
@@ -566,20 +589,20 @@ function Listings.MoveTier(id, direction)
         end
     end
     if not index then
-        return nil, 'invalid_tier'
+        return nil, group == 'weapon' and 'invalid_weapon_class' or 'invalid_tier'
     end
     local swapWith = index + (tonumber(direction) or 0)
     if swapWith < 1 or swapWith > #list then
-        return Shop.GetTier(id)
+        return Shop.GetTier(id, group)
     end
     local a, b = list[index], list[swapWith]
     a.sort, b.sort = b.sort, a.sort
     if a.sort == b.sort then
         a.sort = a.sort + (direction > 0 and 1 or -1)
     end
-    DB.UpsertShopMeta('tier', a)
-    DB.UpsertShopMeta('tier', b)
+    DB.UpsertShopMeta(kind, a)
+    DB.UpsertShopMeta(kind, b)
     Listings.ReloadShop()
-    return Shop.GetTier(id)
+    return Shop.GetTier(id, group)
 end
 

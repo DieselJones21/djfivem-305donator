@@ -19,8 +19,8 @@ const GEM = '<svg class="gem" viewBox="0 0 24 24" fill="currentColor"><path d="M
 
 const THEMES = ['miami', 'envy', 'rebel', 'crimson', 'ocean', 'gold', 'emerald', 'violet'];
 const DEFAULT_CATEGORIES = [
-    { id: 'vehicles', label: 'Vehicles', grantType: 'vehicle', usesTiers: true, gated: 'none', timed: false, builtin: true, enabled: true, sort: 10 },
-    { id: 'weapons', label: 'Weapons', grantType: 'weapon', usesTiers: false, gated: 'none', timed: false, builtin: true, enabled: true, sort: 20 },
+    { id: 'vehicles', label: 'Vehicles', grantType: 'vehicle', usesTiers: true, tierGroup: 'vehicle', gated: 'none', timed: false, builtin: true, enabled: true, sort: 10 },
+    { id: 'weapons', label: 'Weapons', grantType: 'weapon', usesTiers: true, tierGroup: 'weapon', gated: 'none', timed: false, builtin: true, enabled: true, sort: 20 },
     { id: 'extras', label: 'Extra Items', grantType: 'item', usesTiers: false, gated: 'none', timed: false, builtin: true, enabled: true, sort: 30 },
     { id: 'bundles', label: 'Bundles', grantType: 'bundle', usesTiers: false, gated: 'none', timed: false, builtin: true, enabled: true, sort: 40 },
     { id: 'gangs', label: 'Gang Store', grantType: 'mixed', usesTiers: false, gated: 'gang', timed: false, builtin: true, enabled: true, sort: 50 },
@@ -28,11 +28,20 @@ const DEFAULT_CATEGORIES = [
     { id: 'limited', label: 'Limited Time', grantType: 'mixed', usesTiers: false, gated: 'none', timed: true, builtin: true, enabled: true, sort: 70 },
 ];
 const DEFAULT_TIERS = [
-    { id: 'emerald', label: 'Emerald', builtin: true, enabled: true, sort: 10 },
-    { id: 'sapphire', label: 'Sapphire', builtin: true, enabled: true, sort: 20 },
-    { id: 'blackdiamond', label: 'Black Diamond', builtin: true, enabled: true, sort: 30 },
+    { id: 'bronze', label: 'Bronze', builtin: true, enabled: true, sort: 10 },
+    { id: 'silver', label: 'Silver', builtin: true, enabled: true, sort: 20 },
+    { id: 'gold', label: 'Gold', builtin: true, enabled: true, sort: 30 },
 ];
-const TIER_ALIASES = { bronze: 'emerald', silver: 'sapphire', gold: 'blackdiamond', black_diamond: 'blackdiamond', diamond: 'blackdiamond' };
+const DEFAULT_WEAPON_TIERS = [
+    { id: 'melee', label: 'Melee', builtin: true, enabled: true, sort: 10 },
+    { id: 'pistol', label: 'Pistol', builtin: true, enabled: true, sort: 20 },
+    { id: 'smg', label: 'SMG', builtin: true, enabled: true, sort: 30 },
+    { id: 'rifles', label: 'Rifles', builtin: true, enabled: true, sort: 40 },
+];
+const TIER_ALIASES = {
+    vehicle: { emerald: 'bronze', sapphire: 'silver', blackdiamond: 'gold', black_diamond: 'gold', diamond: 'gold' },
+    weapon: { pistols: 'pistol', smgs: 'smg', rifle: 'rifles', melee_weapons: 'melee' },
+};
 
 function liveCategories() {
     const src = (state.categories && state.categories.length) ? state.categories : DEFAULT_CATEGORIES;
@@ -46,21 +55,37 @@ function adminCategories() {
     return src.filter((c) => c.id !== 'pets');
 }
 
-function liveTiers() {
-    const src = (state.tiers && state.tiers.length)
-        ? state.tiers.filter((t) => t.enabled !== false)
-        : DEFAULT_TIERS;
-    return src.length ? src : DEFAULT_TIERS;
+function liveTiers(group) {
+    const kind = group === 'weapon' ? 'weapon' : 'vehicle';
+    const fallback = kind === 'weapon' ? DEFAULT_WEAPON_TIERS : DEFAULT_TIERS;
+    const src = kind === 'weapon'
+        ? ((state.weaponTiers && state.weaponTiers.length) ? state.weaponTiers : fallback)
+        : ((state.tiers && state.tiers.length) ? state.tiers : fallback);
+    const enabled = src.filter((t) => t.enabled !== false);
+    return enabled.length ? enabled : fallback;
 }
 
-function adminTiers() {
-    return (state.admin && state.admin.tiers && state.admin.tiers.length) ? state.admin.tiers : liveTiers();
+function adminTiers(group) {
+    const kind = group === 'weapon' ? 'weapon' : 'vehicle';
+    if (kind === 'weapon') {
+        return (state.admin && state.admin.weaponTiers && state.admin.weaponTiers.length)
+            ? state.admin.weaponTiers
+            : liveTiers('weapon');
+    }
+    return (state.admin && state.admin.tiers && state.admin.tiers.length) ? state.admin.tiers : liveTiers('vehicle');
 }
 
 function shopCategory(id) {
     return adminCategories().find((c) => c.id === id)
         || liveCategories().find((c) => c.id === id)
         || { id, label: id, grantType: 'item', usesTiers: false };
+}
+
+function categoryTierGroup(cat) {
+    const row = typeof cat === 'string' ? shopCategory(cat) : (cat || {});
+    if (row.tierGroup === 'weapon' || row.tierGroup === 'vehicle') return row.tierGroup;
+    if (row.grantType === 'weapon') return 'weapon';
+    return 'vehicle';
 }
 
 function shopTabs() {
@@ -79,22 +104,25 @@ function shopTabs() {
     return tabs;
 }
 
-function normalizeTier(tier) {
-    const ids = liveTiers().map((row) => row.id);
-    const fallback = ids[0] || 'emerald';
+function normalizeTier(tier, group) {
+    const kind = group === 'weapon' ? 'weapon' : 'vehicle';
+    const ids = liveTiers(kind).map((row) => row.id);
+    const fallback = ids[0] || (kind === 'weapon' ? 'pistol' : 'bronze');
     if (!tier) return fallback;
     const raw = String(tier).toLowerCase();
     const compact = raw.replace(/[\s_-]+/g, '');
-    const mapped = TIER_ALIASES[raw] || TIER_ALIASES[compact];
+    const aliases = TIER_ALIASES[kind] || {};
+    const mapped = aliases[raw] || aliases[compact];
     if (mapped && ids.includes(mapped)) return mapped;
     if (ids.includes(raw)) return raw;
     if (ids.includes(compact)) return compact;
     return fallback;
 }
 
-function tierLabel(tier) {
-    const id = normalizeTier(tier);
-    const row = liveTiers().find((t) => t.id === id) || adminTiers().find((t) => t.id === id);
+function tierLabel(tier, group) {
+    const kind = group === 'weapon' ? 'weapon' : categoryTierGroup({ tierGroup: group });
+    const id = normalizeTier(tier, kind);
+    const row = liveTiers(kind).find((t) => t.id === id) || adminTiers(kind).find((t) => t.id === id);
     return row?.label || id;
 }
 
@@ -122,6 +150,7 @@ const state = {
     gangTabLabel: 'Gang Store',
     categories: DEFAULT_CATEGORIES,
     tiers: DEFAULT_TIERS,
+    weaponTiers: DEFAULT_WEAPON_TIERS,
     tebex: null,
     shopTier: 'all',
 };
@@ -130,10 +159,16 @@ function emptyCatalog() {
     const catalog = { pets: [] };
     (state.categories || DEFAULT_CATEGORIES).concat(adminCategories()).forEach((cat) => {
         if (!cat?.id || catalog[cat.id]) return;
-        catalog[cat.id] = cat.usesTiers ? Object.fromEntries(liveTiers().map((tier) => [tier.id, []])) : [];
+        catalog[cat.id] = cat.usesTiers
+            ? Object.fromEntries(liveTiers(categoryTierGroup(cat)).map((tier) => [tier.id, []]))
+            : [];
     });
     DEFAULT_CATEGORIES.forEach((cat) => {
-        if (!catalog[cat.id]) catalog[cat.id] = cat.usesTiers ? Object.fromEntries(liveTiers().map((tier) => [tier.id, []])) : [];
+        if (!catalog[cat.id]) {
+            catalog[cat.id] = cat.usesTiers
+                ? Object.fromEntries(liveTiers(categoryTierGroup(cat)).map((tier) => [tier.id, []]))
+                : [];
+        }
     });
     return catalog;
 }
@@ -142,7 +177,7 @@ function putListing(catalog, item) {
     const copy = { ...item };
     const cat = shopCategory(item.category);
     if (cat.usesTiers) {
-        const tier = normalizeTier(item.tier);
+        const tier = normalizeTier(item.tier, categoryTierGroup(cat));
         catalog[cat.id] = catalog[cat.id] || {};
         catalog[cat.id][tier] = catalog[cat.id][tier] || [];
         catalog[cat.id][tier].push({ ...copy, tier });
@@ -173,13 +208,25 @@ function previewCatalog() {
     const catalog = emptyCatalog();
     [
         decoratePreviewItem({
-            id: 'veh_sultan', category: 'vehicles', tier: 'blackdiamond', label: 'Karin Sultan',
-            description: 'Black Diamond donor car delivered to your garage.', price: 8750, remaining: 8,
+            id: 'veh_sultan', category: 'vehicles', tier: 'gold', label: 'Karin Sultan',
+            description: 'Gold donor car delivered to your garage.', price: 8750, remaining: 8,
         }),
         decoratePreviewItem({
-            id: 'wep_pistol', category: 'weapons', label: 'Combat Pistol',
+            id: 'wep_pistol', category: 'weapons', tier: 'pistol', label: 'Combat Pistol',
             description: 'Sidearm grant with ammo.', price: 2450, remaining: 18, item: 'WEAPON_PISTOL', weapon: 'WEAPON_PISTOL',
             image: 'nui://ox_inventory/web/images/weapon_pistol.png',
+        }),
+        decoratePreviewItem({
+            id: 'wep_knife', category: 'weapons', tier: 'melee', label: 'Knife',
+            description: 'Melee grant.', price: 650, remaining: 12, item: 'WEAPON_KNIFE', weapon: 'WEAPON_KNIFE',
+        }),
+        decoratePreviewItem({
+            id: 'wep_smg', category: 'weapons', tier: 'smg', label: 'Micro SMG',
+            description: 'SMG grant with ammo.', price: 3200, remaining: 9, item: 'WEAPON_MICROSMG', weapon: 'WEAPON_MICROSMG',
+        }),
+        decoratePreviewItem({
+            id: 'wep_rifle', category: 'weapons', tier: 'rifles', label: 'Carbine Rifle',
+            description: 'Rifle grant with ammo.', price: 5400, remaining: 6, item: 'WEAPON_CARBINERIFLE', weapon: 'WEAPON_CARBINERIFLE',
         }),
         decoratePreviewItem({
             id: 'ext_armour', category: 'extras', label: 'Armour Pack',
@@ -226,7 +273,7 @@ function mockNormalizeListing(data) {
     const item = {
         id,
         category,
-        tier: shopCategory(category).usesTiers ? normalizeTier(data.tier) : undefined,
+        tier: shopCategory(category).usesTiers ? normalizeTier(data.tier, categoryTierGroup(shopCategory(category))) : undefined,
         label,
         description: data.description || '',
         price,
@@ -258,12 +305,13 @@ function mockShopLayout() {
     return {
         categories: [
             ...DEFAULT_CATEGORIES,
-            { id: 'imports', label: 'Imports', grantType: 'vehicle', usesTiers: true, gated: 'none', timed: false, builtin: false, enabled: true, sort: 25 },
+            { id: 'imports', label: 'Imports', grantType: 'vehicle', usesTiers: true, tierGroup: 'vehicle', gated: 'none', timed: false, builtin: false, enabled: true, sort: 25 },
         ],
         tiers: [
             ...DEFAULT_TIERS,
             { id: 'ruby', label: 'Ruby', builtin: false, enabled: true, sort: 40 },
         ],
+        weaponTiers: DEFAULT_WEAPON_TIERS,
         tebex: {
             storeUrl: 'https://store.rebelroleplay.com',
             playerRedeem: 'redeem',
@@ -281,8 +329,9 @@ function mockOpen() {
     const layout = mockShopLayout();
     state.categories = layout.categories;
     state.tiers = layout.tiers;
+    state.weaponTiers = layout.weaponTiers;
     state.tebex = layout.tebex;
-    state.admin = { ...(state.admin || {}), categories: layout.categories, tiers: layout.tiers, tebex: layout.tebex };
+    state.admin = { ...(state.admin || {}), categories: layout.categories, tiers: layout.tiers, weaponTiers: layout.weaponTiers, tebex: layout.tebex };
     return {
         ok: true,
         serverName: 'Rebel Roleplay',
@@ -293,6 +342,7 @@ function mockOpen() {
         locale: {},
         categories: layout.categories,
         tiers: layout.tiers,
+        weaponTiers: layout.weaponTiers,
         tebex: layout.tebex,
         player: {
             name: 'MoodyNewt8638',
@@ -330,10 +380,14 @@ function mockOpen() {
             codes: [],
             categories: layout.categories,
             tiers: layout.tiers,
+            weaponTiers: layout.weaponTiers,
             tebex: layout.tebex,
             listings: [
-                { id: 'veh_sultan', category: 'vehicles', tier: 'blackdiamond', label: 'Karin Sultan', price: 8750, model: 'sultan' },
-                { id: 'wep_pistol', category: 'weapons', label: 'Combat Pistol', price: 2450, item: 'WEAPON_PISTOL', weapon: 'WEAPON_PISTOL' },
+                { id: 'veh_sultan', category: 'vehicles', tier: 'gold', label: 'Karin Sultan', price: 8750, model: 'sultan' },
+                { id: 'wep_pistol', category: 'weapons', tier: 'pistol', label: 'Combat Pistol', price: 2450, item: 'WEAPON_PISTOL', weapon: 'WEAPON_PISTOL' },
+                { id: 'wep_knife', category: 'weapons', tier: 'melee', label: 'Knife', price: 650, item: 'WEAPON_KNIFE', weapon: 'WEAPON_KNIFE' },
+                { id: 'wep_smg', category: 'weapons', tier: 'smg', label: 'Micro SMG', price: 3200, item: 'WEAPON_MICROSMG', weapon: 'WEAPON_MICROSMG' },
+                { id: 'wep_rifle', category: 'weapons', tier: 'rifles', label: 'Carbine Rifle', price: 5400, item: 'WEAPON_CARBINERIFLE', weapon: 'WEAPON_CARBINERIFLE' },
                 { id: 'gang_switch', category: 'gangs', label: 'Gang Switchblade', price: 1200, item: 'WEAPON_SWITCHBLADE', weapon: 'WEAPON_SWITCHBLADE' },
                 { id: 'ext_armour', category: 'extras', label: 'Armour Pack', price: 400, item: 'armour', extras: [{ item: 'armour', count: 5 }] },
                 { id: 'bdl_starter', category: 'bundles', label: 'Starter Kit', price: 250, extras: [{ item: 'armour', count: 5 }, { item: 'bandage', count: 10 }, { item: 'lockpick', count: 2 }] },
@@ -429,7 +483,8 @@ async function post(name, data = {}) {
                 id,
                 label,
                 grantType: existing?.builtin ? existing.grantType : (data.grantType || 'item'),
-                usesTiers: existing?.builtin ? existing.usesTiers : Boolean(data.usesTiers) || data.grantType === 'vehicle',
+                usesTiers: existing?.builtin ? existing.usesTiers : Boolean(data.usesTiers) || data.grantType === 'vehicle' || data.grantType === 'weapon',
+                tierGroup: existing?.builtin ? existing.tierGroup : (data.grantType === 'weapon' ? 'weapon' : ((Boolean(data.usesTiers) || data.grantType === 'vehicle') ? 'vehicle' : undefined)),
                 gated: data.gated === 'gang' ? 'gang' : 'none',
                 timed: existing?.timed || false,
                 builtin: Boolean(existing?.builtin),
@@ -471,46 +526,55 @@ async function post(name, data = {}) {
             return { ok: true, admin: state.admin, categories: state.categories, tiers: state.tiers };
         }
         if (name === 'adminSaveTier') {
+            const group = data.group === 'weapon' ? 'weapon' : 'vehicle';
+            const key = group === 'weapon' ? 'weaponTiers' : 'tiers';
             const label = String(data.label || '').trim();
             if (!label) return { ok: false, message: 'Enter a tier name.' };
             const id = String(data.id || label.toLowerCase().replace(/[^a-z0-9]+/g, '_')).replace(/^_|_$/g, '');
-            const existing = (state.admin.tiers || []).find((row) => row.id === id);
+            const existing = (state.admin[key] || []).find((row) => row.id === id);
             const row = {
                 id,
                 label,
                 builtin: Boolean(existing?.builtin),
                 enabled: true,
-                sort: existing?.sort || ((state.admin.tiers || []).length + 1) * 10,
+                sort: existing?.sort || ((state.admin[key] || []).length + 1) * 10,
             };
-            state.admin.tiers = (state.admin.tiers || []).filter((t) => t.id !== id);
-            state.admin.tiers.push(row);
-            state.admin.tiers.sort((a, b) => a.sort - b.sort);
-            state.tiers = state.admin.tiers.filter((t) => t.enabled !== false);
-            return { ok: true, message: 'Vehicle tier saved.', admin: state.admin, catalog: state.catalog, player: state.player, categories: state.categories, tiers: state.tiers };
+            state.admin[key] = (state.admin[key] || []).filter((t) => t.id !== id);
+            state.admin[key].push(row);
+            state.admin[key].sort((a, b) => a.sort - b.sort);
+            if (group === 'weapon') state.weaponTiers = state.admin.weaponTiers.filter((t) => t.enabled !== false);
+            else state.tiers = state.admin.tiers.filter((t) => t.enabled !== false);
+            return { ok: true, message: group === 'weapon' ? 'Weapon class saved.' : 'Vehicle tier saved.', admin: state.admin, catalog: state.catalog, player: state.player, categories: state.categories, tiers: state.tiers, weaponTiers: state.weaponTiers };
         }
         if (name === 'adminDeleteTier') {
-            const list = state.admin.tiers || [];
-            if (list.filter((t) => t.enabled !== false).length <= 1) return { ok: false, message: 'Keep at least one vehicle tier.' };
+            const group = data.group === 'weapon' ? 'weapon' : 'vehicle';
+            const key = group === 'weapon' ? 'weaponTiers' : 'tiers';
+            const list = state.admin[key] || [];
+            if (list.filter((t) => t.enabled !== false).length <= 1) return { ok: false, message: group === 'weapon' ? 'Keep at least one weapon class.' : 'Keep at least one vehicle tier.' };
             const fallback = list.find((t) => t.id !== data.id)?.id;
             (state.admin.listings || []).forEach((row) => {
-                if (row.tier === data.id) row.tier = fallback;
+                if (row.tier === data.id && categoryTierGroup(shopCategory(row.category)) === group) row.tier = fallback;
             });
-            state.admin.tiers = list.filter((t) => t.id !== data.id);
-            state.tiers = state.admin.tiers;
+            state.admin[key] = list.filter((t) => t.id !== data.id);
+            if (group === 'weapon') state.weaponTiers = state.admin.weaponTiers;
+            else state.tiers = state.admin.tiers;
             state.catalog = catalogFromListings(state.admin.listings);
-            return { ok: true, message: 'Vehicle tier removed. Listings were moved to another tier.', admin: state.admin, catalog: state.catalog, player: state.player, categories: state.categories, tiers: state.tiers };
+            return { ok: true, message: group === 'weapon' ? 'Weapon class removed. Listings were moved to another class.' : 'Vehicle tier removed. Listings were moved to another tier.', admin: state.admin, catalog: state.catalog, player: state.player, categories: state.categories, tiers: state.tiers, weaponTiers: state.weaponTiers };
         }
         if (name === 'adminMoveTier') {
-            const list = state.admin.tiers || [];
+            const group = data.group === 'weapon' ? 'weapon' : 'vehicle';
+            const key = group === 'weapon' ? 'weaponTiers' : 'tiers';
+            const list = state.admin[key] || [];
             const index = list.findIndex((row) => row.id === data.id);
             const swap = index + Number(data.direction || 0);
-            if (index < 0 || swap < 0 || swap >= list.length) return { ok: true, admin: state.admin, tiers: state.tiers };
+            if (index < 0 || swap < 0 || swap >= list.length) return { ok: true, admin: state.admin, tiers: state.tiers, weaponTiers: state.weaponTiers };
             const aSort = list[index].sort;
             list[index].sort = list[swap].sort;
             list[swap].sort = aSort;
             list.sort((a, b) => a.sort - b.sort);
-            state.tiers = list.filter((t) => t.enabled !== false);
-            return { ok: true, admin: state.admin, categories: state.categories, tiers: state.tiers };
+            if (group === 'weapon') state.weaponTiers = list.filter((t) => t.enabled !== false);
+            else state.tiers = list.filter((t) => t.enabled !== false);
+            return { ok: true, admin: state.admin, categories: state.categories, tiers: state.tiers, weaponTiers: state.weaponTiers };
         }
         return { ok: true, player: state.player, admin: state.admin, lookup: state.lookup };
     }
@@ -551,8 +615,11 @@ function applyPayload(payload) {
     if (payload.gangTabLabel) state.gangTabLabel = payload.gangTabLabel;
     if (payload.categories) state.categories = payload.categories;
     if (payload.tiers) state.tiers = payload.tiers;
+    if (payload.weaponTiers) state.weaponTiers = payload.weaponTiers;
     if (payload.tebex) state.tebex = payload.tebex;
     if (payload.admin?.categories) state.categories = payload.categories || state.categories;
+    if (payload.admin?.tiers) state.tiers = payload.admin.tiers;
+    if (payload.admin?.weaponTiers) state.weaponTiers = payload.admin.weaponTiers;
     if (payload.admin?.tebex) state.tebex = payload.admin.tebex;
 }
 
@@ -580,7 +647,7 @@ function closeUI() {
 function weaponList(cat) {
     const w = cat?.weapons;
     if (Array.isArray(w)) return w.map((i) => ({ ...i, category: 'weapons' }));
-    return liveTiers().flatMap((tier) => (w?.[tier.id] || []).map((i) => ({ ...i, category: 'weapons', tier: tier.id })));
+    return liveTiers('weapon').flatMap((tier) => (w?.[tier.id] || []).map((i) => ({ ...i, category: 'weapons', tier: tier.id })));
 }
 
 function findItem(itemId) {
@@ -622,11 +689,11 @@ function allCatalogItems() {
             if (Array.isArray(groups)) {
                 groups.forEach((item) => out.push({ ...item, category: row.id }));
             } else {
-                liveTiers().forEach((tier) => {
+                liveTiers(categoryTierGroup(row)).forEach((tier) => {
                     (groups[tier.id] || []).forEach((item) => out.push({ ...item, category: row.id, tier: tier.id }));
                 });
                 Object.keys(groups).forEach((tier) => {
-                    if (liveTiers().some((t) => t.id === tier)) return;
+                    if (liveTiers(categoryTierGroup(row)).some((t) => t.id === tier)) return;
                     (groups[tier] || []).forEach((item) => out.push({ ...item, category: row.id, tier }));
                 });
             }
@@ -673,6 +740,7 @@ function renderTabs() {
         btn.addEventListener('click', () => {
             state.tab = btn.dataset.tab;
             state.search = '';
+            state.shopTier = 'all';
             render();
         });
     });
@@ -739,7 +807,10 @@ function itemCard(item, extra = {}) {
         : '';
     let badge = '';
     if (extra.featured || item.category === 'bundles') badge = '<div class="tierchip popular">POPULAR</div>';
-    if (tier && shopCategory(item.category).usesTiers) badge = `<div class="tierchip ${normalizeTier(tier)}">${escapeHtml(tierLabel(tier))}</div>`;
+    if (tier && shopCategory(item.category).usesTiers) {
+        const group = categoryTierGroup(item.category);
+        badge = `<div class="tierchip ${normalizeTier(tier, group)}">${escapeHtml(tierLabel(tier, group))}</div>`;
+    }
     else if (item.limitedUntil) badge = '<div class="tierchip limited">LIMITED</div>';
     const remaining = item.remaining;
     const stock = remaining != null
@@ -797,23 +868,32 @@ function shopToolbar(title, sub, extraHtml = '') {
 
 function shopListFor(kind, tier) {
     const groups = state.catalog?.[kind] || {};
+    const group = categoryTierGroup(kind);
     if (Array.isArray(groups)) {
         return groups.map((item) => ({ ...item, category: kind }));
     }
-    const ids = liveTiers().map((row) => row.id);
+    const ids = liveTiers(group).map((row) => row.id);
     if (tier === 'all') {
         return ids.flatMap((name) =>
-            (groups[name] || []).map((item) => ({ ...item, category: kind, tier: normalizeTier(item.tier || name) }))
+            (groups[name] || []).map((item) => ({ ...item, category: kind, tier: normalizeTier(item.tier || name, group) }))
         );
     }
     return (groups[tier] || []).map((item) => ({ ...item, category: kind, tier: item.tier || tier }));
 }
 
+function activeShopTier(kind) {
+    const group = categoryTierGroup(kind);
+    const ids = liveTiers(group).map((row) => row.id);
+    if (state.shopTier && state.shopTier !== 'all' && !ids.includes(state.shopTier)) return 'all';
+    return state.shopTier || 'all';
+}
+
 function tierPills(kind) {
-    const current = state.shopTier || 'all';
+    const group = categoryTierGroup(kind);
+    const current = activeShopTier(kind);
     return `
         <div class="pills" id="tierPills">
-            ${['all', ...liveTiers().map((row) => row.id)].map((tier) => `<button class="pill ${tier} ${current === tier ? 'active' : ''}" data-tier="${tier}">${tier === 'all' ? 'All' : tierLabel(tier)}</button>`).join('')}
+            ${['all', ...liveTiers(group).map((row) => row.id)].map((tier) => `<button class="pill ${tier} ${current === tier ? 'active' : ''}" data-tier="${tier}">${tier === 'all' ? 'All' : tierLabel(tier, group)}</button>`).join('')}
         </div>
     `;
 }
@@ -829,7 +909,7 @@ function filterList(list) {
 }
 
 function renderTierShop(key, title, sub) {
-    const list = filterList(shopListFor(key, state.shopTier || 'all'));
+    const list = filterList(shopListFor(key, activeShopTier(key)));
     return `
         <section class="panel">
             ${shopToolbar(title, sub, tierPills(key))}
@@ -843,7 +923,7 @@ function renderVehicles() {
 }
 
 function renderWeapons() {
-    return renderSimpleShop('weapons', 'Weapons', 'Every weapon is granted through ox_inventory. Images come from ox_inventory/web/images.');
+    return renderTierShop('weapons', 'Weapons', 'Filter by Melee, Pistol, SMG, or Rifles. Every weapon is granted through ox_inventory.');
 }
 
 function renderSimpleShop(key, title, sub) {
@@ -963,7 +1043,7 @@ function renderInventory() {
                 <div class="owned-row">
                     <div>
                         <strong>${escapeHtml(row.label)}</strong>
-                        <div class="sub">${escapeHtml(row.category)}${row.tier ? ` • ${escapeHtml(tierLabel(row.tier))}` : ''} • ${formatDate(row.created_at)}</div>
+                        <div class="sub">${escapeHtml(row.category)}${row.tier ? ` • ${escapeHtml(tierLabel(row.tier, categoryTierGroup(row.category)))}` : ''} • ${formatDate(row.created_at)}</div>
                     </div>
                     <div class="actions">
                         ${isPet ? `<button class="btn primary" data-spawn="${row.item_id}">Spawn pet</button><button class="btn ghost" id="despawnPet">Send pet away</button>` : ''}
@@ -1060,9 +1140,23 @@ function updateListingHint() {
     hint.textContent = copy[cat.grantType] || copy.item;
 }
 
+function refreshListingTierSelect(cat) {
+    const select = document.getElementById('listTier');
+    if (!select) return;
+    const group = categoryTierGroup(cat);
+    const current = select.value;
+    const options = liveTiers(group);
+    select.innerHTML = options.map((tier) => `<option value="${escapeHtml(tier.id)}">${escapeHtml(tier.label)}</option>`).join('');
+    const label = document.querySelector('[data-need="tier"] label');
+    if (label) label.textContent = group === 'weapon' ? 'Weapon class' : 'Vehicle tier';
+    if (options.some((tier) => tier.id === current)) select.value = current;
+    else if (options[0]) select.value = options[0].id;
+}
+
 function toggleListingFields() {
     const cat = shopCategory(listingVal('listCategory') || 'extras');
     const grant = cat.grantType || 'item';
+    refreshListingTierSelect(cat);
     const show = {
         all: true,
         tier: Boolean(cat.usesTiers),
@@ -1133,7 +1227,7 @@ function fillListingForm(item) {
     set('listEditingId', item?.id || '');
     set('listId', item?.id || '');
     set('listCategory', item?.category || 'extras');
-    set('listTier', item?.tier ? normalizeTier(item.tier) : (liveTiers()[0]?.id || ''));
+    set('listTier', item?.tier ? normalizeTier(item.tier, categoryTierGroup(item?.category)) : (liveTiers(categoryTierGroup(item?.category))[0]?.id || ''));
     set('listLabel', item?.label || '');
     set('listDescription', item?.description || '');
     set('listPrice', item?.price ?? '');
@@ -1161,7 +1255,7 @@ function shopSubtitle(cat) {
     if (cat.gated === 'gang') return 'Only players with the configured Discord gang role can see this tab.';
     if (cat.timed) return 'Timed stock. When the window closes, the listing disappears.';
     if (cat.grantType === 'vehicle') return 'Spawn name in Admin. Stored in JG garages after purchase.';
-    if (cat.grantType === 'weapon') return 'Every weapon is granted through ox_inventory. Images come from ox_inventory/web/images.';
+    if (cat.grantType === 'weapon') return 'Filter by Melee, Pistol, SMG, or Rifles. Every weapon is granted through ox_inventory.';
     if (cat.grantType === 'bundle') return 'One purchase grants every ox_inventory item in the package.';
     if (cat.grantType === 'item') return 'Type the ox_inventory item name in Admin. Images use Fivemanage, then ox_inventory.';
     return 'Admins add listings from the Admin tab.';
@@ -1211,9 +1305,35 @@ function renderTebexHelp() {
     `;
 }
 
+function renderTierManager(title, hint, group, placeholder) {
+    const tiers = adminTiers(group);
+    return `
+        <h3 style="margin:18px 0 8px">${title}</h3>
+        <p class="quick-hint">${hint}</p>
+        <div class="form-grid listing-grid">
+            <div class="field"><label>Name</label><input id="tierLabel-${group}" placeholder="${placeholder}" /></div>
+        </div>
+        <div class="actions" style="margin:10px 0 12px"><button class="btn primary" data-save-tier="${group}">Add</button></div>
+        <table class="table">
+            <thead><tr><th>${group === 'weapon' ? 'Class' : 'Tier'}</th><th></th></tr></thead>
+            <tbody>
+                ${tiers.map((tier) => `
+                    <tr>
+                        <td>${escapeHtml(tier.label)}<div class="sub">${escapeHtml(tier.id)}</div></td>
+                        <td class="actions">
+                            <button class="btn ghost" data-move-tier="${escapeHtml(tier.id)}" data-tier-group="${group}" data-dir="-1">Up</button>
+                            <button class="btn ghost" data-move-tier="${escapeHtml(tier.id)}" data-tier-group="${group}" data-dir="1">Down</button>
+                            <button class="btn ghost" data-delete-tier="${escapeHtml(tier.id)}" data-tier-group="${group}">Remove</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
 function renderShopManager() {
     const cats = adminCategories();
-    const tiers = adminTiers();
     return `
         <h3 style="margin:0 0 8px">Shop tabs</h3>
         <p class="quick-hint">Add or hide shop categories here. Custom tabs can be deleted if they have no listings. Built-in tabs are hidden instead of deleted.</p>
@@ -1229,7 +1349,7 @@ function renderShopManager() {
                     <option value="mixed">Vehicles or items</option>
                 </select>
             </div>
-            <div class="field"><label class="check-label"><input id="tabTiers" type="checkbox" /> Use vehicle tiers</label></div>
+            <div class="field"><label class="check-label"><input id="tabTiers" type="checkbox" /> Use class / tier pills</label></div>
             <div class="field"><label class="check-label"><input id="tabGang" type="checkbox" /> Gang role only</label></div>
         </div>
         <div class="actions" style="margin:10px 0 12px"><button class="btn primary" id="saveTab">Add tab</button></div>
@@ -1252,27 +1372,8 @@ function renderShopManager() {
                 `).join('')}
             </tbody>
         </table>
-        <h3 style="margin:18px 0 8px">Vehicle tiers</h3>
-        <p class="quick-hint">These pills show on any tab that uses vehicle tiers. Removing a tier moves its cars to another tier.</p>
-        <div class="form-grid listing-grid">
-            <div class="field"><label>Tier name</label><input id="tierLabel" placeholder="Ruby" /></div>
-        </div>
-        <div class="actions" style="margin:10px 0 12px"><button class="btn primary" id="saveTier">Add tier</button></div>
-        <table class="table">
-            <thead><tr><th>Tier</th><th></th></tr></thead>
-            <tbody>
-                ${tiers.map((tier) => `
-                    <tr>
-                        <td>${escapeHtml(tier.label)}<div class="sub">${escapeHtml(tier.id)}</div></td>
-                        <td class="actions">
-                            <button class="btn ghost" data-move-tier="${escapeHtml(tier.id)}" data-dir="-1">Up</button>
-                            <button class="btn ghost" data-move-tier="${escapeHtml(tier.id)}" data-dir="1">Down</button>
-                            <button class="btn ghost" data-delete-tier="${escapeHtml(tier.id)}">Remove</button>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
+        ${renderTierManager('Vehicle tiers', 'These pills show on Vehicles and any tab that uses vehicle tiers. Removing a tier moves its cars to another tier.', 'vehicle', 'Ruby')}
+        ${renderTierManager('Weapon classes', 'These pills show on Weapons. Use Melee, Pistol, SMG, and Rifles. Removing a class moves those weapons to another class.', 'weapon', 'Shotguns')}
         ${renderTebexHelp()}
     `;
 }
@@ -1306,7 +1407,7 @@ function renderAdmin() {
                 <div class="field" data-need="tier">
                     <label>Vehicle tier</label>
                     <select id="listTier">
-                        ${liveTiers().map((tier) => `<option value="${escapeHtml(tier.id)}">${escapeHtml(tier.label)}</option>`).join('')}
+                        ${liveTiers('vehicle').map((tier) => `<option value="${escapeHtml(tier.id)}">${escapeHtml(tier.label)}</option>`).join('')}
                     </select>
                 </div>
                 <div class="field" data-need="model">
@@ -1408,7 +1509,7 @@ function renderAdmin() {
                         <tr>
                             <td>${row.image ? `<img class="listing-thumb" src="${escapeHtml(row.image)}" alt="" />` : ''}</td>
                             <td>${escapeHtml(row.label)}<div class="sub">${escapeHtml(row.id)}</div></td>
-                            <td>${escapeHtml(row.category)}${row.tier ? ` / ${escapeHtml(tierLabel(row.tier))}` : ''}</td>
+                            <td>${escapeHtml(row.category)}${row.tier ? ` / ${escapeHtml(tierLabel(row.tier, categoryTierGroup(row.category)))}` : ''}</td>
                             <td>${escapeHtml(listingContents(row))}</td>
                             <td>${formatCoins(row.price)}</td>
                             <td class="actions">
@@ -1631,24 +1732,26 @@ function renderContent() {
             const tabTiers = root.querySelector('#tabTiers');
             if (tabGrant && tabTiers) {
                 tabGrant.addEventListener('change', () => {
-                    if (tabGrant.value === 'vehicle') tabTiers.checked = true;
+                    if (tabGrant.value === 'vehicle' || tabGrant.value === 'weapon') tabTiers.checked = true;
                 });
             }
             saveTab.addEventListener('click', async () => {
+                const grantType = document.getElementById('tabGrant')?.value;
                 handleResult(await post('adminSaveCategory', {
                     label: document.getElementById('tabLabel')?.value,
-                    grantType: document.getElementById('tabGrant')?.value,
-                    usesTiers: Boolean(document.getElementById('tabTiers')?.checked) || document.getElementById('tabGrant')?.value === 'vehicle',
+                    grantType,
+                    usesTiers: Boolean(document.getElementById('tabTiers')?.checked) || grantType === 'vehicle' || grantType === 'weapon',
+                    tierGroup: grantType === 'weapon' ? 'weapon' : 'vehicle',
                     gated: document.getElementById('tabGang')?.checked ? 'gang' : 'none',
                 }), 'Shop tab saved.');
             });
         }
-        const saveTier = root.querySelector('#saveTier');
-        if (saveTier) {
-            saveTier.addEventListener('click', async () => {
-                handleResult(await post('adminSaveTier', { label: document.getElementById('tierLabel')?.value }), 'Vehicle tier saved.');
+        root.querySelectorAll('[data-save-tier]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const group = btn.dataset.saveTier;
+                handleResult(await post('adminSaveTier', { label: document.getElementById(`tierLabel-${group}`)?.value, group }), group === 'weapon' ? 'Weapon class saved.' : 'Vehicle tier saved.');
             });
-        }
+        });
         root.querySelectorAll('[data-hide-tab]').forEach((btn) => {
             btn.addEventListener('click', async () => {
                 handleResult(await post('adminDeleteCategory', { id: btn.dataset.hideTab }));
@@ -1667,12 +1770,12 @@ function renderContent() {
         });
         root.querySelectorAll('[data-delete-tier]').forEach((btn) => {
             btn.addEventListener('click', async () => {
-                handleResult(await post('adminDeleteTier', { id: btn.dataset.deleteTier }));
+                handleResult(await post('adminDeleteTier', { id: btn.dataset.deleteTier, group: btn.dataset.tierGroup }));
             });
         });
         root.querySelectorAll('[data-move-tier]').forEach((btn) => {
             btn.addEventListener('click', async () => {
-                handleResult(await post('adminMoveTier', { id: btn.dataset.moveTier, direction: Number(btn.dataset.dir) }));
+                handleResult(await post('adminMoveTier', { id: btn.dataset.moveTier, direction: Number(btn.dataset.dir), group: btn.dataset.tierGroup }));
             });
         });
         root.querySelectorAll('[data-copy]').forEach((btn) => {

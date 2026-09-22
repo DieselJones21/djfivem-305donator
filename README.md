@@ -10,10 +10,11 @@ This is the latest donator feature set (custom tabs, Tebex Payment IDs, gang sto
 
 - **Quick shop editor** — pick a tab, type the spawn or ox name and a Rebel Coin price, then Save. Display name fills in for you.
 - **Custom shop tabs** — add, hide, reorder, or remove categories in-game from Admin → Shop tabs
-- **Custom vehicle tiers** — add or remove tiers (Ruby, Staff, etc.) in-game. Vehicle tabs show those pills
+- **Custom vehicle tiers** — Bronze, Silver, and Gold by default. Add or remove tiers in-game. Vehicle tabs show those pills
+- **Weapon classes** — Melee, Pistol, SMG, and Rifles pills on the Weapons tab. Add or remove classes in-game
 - **Empty catalog by default** — no built-in items; you add your own
 - **Vehicles** — stored in **JG Advanced Garages** after purchase
-- **Weapons** — one flat list (no weapon tiers). Images always come from `ox_inventory/web/images`
+- **Weapons** — grouped by Melee, Pistol, SMG, and Rifles. Images always come from `ox_inventory/web/images`
 - **Items & bundles** — granted through **ox_inventory**. Images use **Fivemanage**, then fall back to ox_inventory
 - **Confirmed delivery** — weapons and items go into inventory immediately; vehicles go into the garage. Pending grants flush on next join
 - **Rebel Coins** — Tebex Payment IDs (`tbx-xxxxxxxx`) redeem in the shop or with `/redeem`. Staff can still grant coins from Admin
@@ -151,16 +152,17 @@ The **Admin** tab is where you add shop tabs, vehicle tiers, listings, grant Reb
 ### Shop tabs and vehicle tiers
 
 1. Open **F11** as an admin → **Admin**.
-2. **Shop tabs** — type a name (Imports), pick what it sells (Vehicles / Weapons / Items / Bundles / mixed), optionally tick **Use vehicle tiers** or **Gang role only**, then **Add tab**.
+2. **Shop tabs** — type a name (Imports), pick what it sells (Vehicles / Weapons / Items / Bundles / mixed), optionally tick **Use class / tier pills** or **Gang role only**, then **Add tab**.
 3. Hide a built-in tab with **Hide**. Remove a custom tab with **Remove** (listings in that tab must be deleted or moved first).
-4. **Vehicle tiers** — type a name (Ruby) and **Add tier**. Those pills show on every tab that uses vehicle tiers. Removing a tier moves its vehicles to another tier.
+4. **Vehicle tiers** — Bronze, Silver, and Gold are built in. Type a name (Ruby) and **Add**. Those pills show on every vehicle tab. Removing a tier moves its vehicles to another tier.
+5. **Weapon classes** — Melee, Pistol, SMG, and Rifles are built in. Add extra classes the same way. Removing a class moves those weapons to another class.
 
 ### Add a listing (quick)
 
 1. Open the store with **F11** as an admin → **Admin**.
 2. Pick the type:
-   - **Vehicle** — spawn name `sultan` + Rebel Coin price. Optional vehicle tier.
-   - **Weapon** — ox name `WEAPON_PISTOL` + Rebel Coin price. Image comes from `ox_inventory/web/images/weapon_pistol.png`.
+   - **Vehicle** — spawn name `sultan` + Rebel Coin price. Optional Bronze / Silver / Gold tier.
+   - **Weapon** — ox name `WEAPON_PISTOL` + Rebel Coin price + Melee / Pistol / SMG / Rifles class. Image comes from `ox_inventory/web/images/weapon_pistol.png`.
    - **Item** — ox name `armour` + count + Rebel Coin price.
    - **Bundle** — two or more ox names.
    - **Gang store** — same as a weapon/item/vehicle, but only Discord gang roles see that tab.

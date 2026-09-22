@@ -269,6 +269,63 @@ function DB.SeedShopMeta()
     for _, row in ipairs(Shop.DefaultTiers()) do
         insert('tier', row)
     end
+    for _, row in ipairs(Shop.DefaultWeaponTiers()) do
+        insert('weapontier', row)
+    end
+end
+
+function DB.MigrateDefaultTiers()
+    pcall(function()
+        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'bronze' WHERE LOWER(IFNULL(tier, '')) IN ('emerald')")
+        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'silver' WHERE LOWER(IFNULL(tier, '')) IN ('sapphire')")
+        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'gold' WHERE LOWER(IFNULL(tier, '')) IN ('blackdiamond', 'black_diamond', 'black diamond', 'diamond')")
+        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'bronze' WHERE category = 'vehicles' AND (tier IS NULL OR tier = '')")
+        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'pistol' WHERE category = 'weapons' AND (tier IS NULL OR tier = '' OR LOWER(tier) IN ('emerald', 'sapphire', 'blackdiamond', 'bronze', 'silver', 'gold'))")
+    end)
+
+    local rename = {
+        emerald = { id = 'bronze', label = 'Bronze' },
+        sapphire = { id = 'silver', label = 'Silver' },
+        blackdiamond = { id = 'gold', label = 'Gold' },
+    }
+    for oldId, dest in pairs(rename) do
+        local old = MySQL.single.await('SELECT meta_id FROM dj_305donator_shop_meta WHERE kind = ? AND meta_id = ?', { 'tier', oldId })
+        local existing = MySQL.single.await('SELECT meta_id FROM dj_305donator_shop_meta WHERE kind = ? AND meta_id = ?', { 'tier', dest.id })
+        if old and not existing then
+            pcall(function()
+                MySQL.update.await(
+                    'UPDATE dj_305donator_shop_meta SET meta_id = ?, label = ? WHERE kind = ? AND meta_id = ?',
+                    { dest.id, dest.label, 'tier', oldId }
+                )
+            end)
+        elseif old and existing then
+            pcall(function()
+                MySQL.update.await('DELETE FROM dj_305donator_shop_meta WHERE kind = ? AND meta_id = ?', { 'tier', oldId })
+            end)
+        end
+    end
+
+    local weapons = MySQL.single.await('SELECT data FROM dj_305donator_shop_meta WHERE kind = ? AND meta_id = ?', { 'category', 'weapons' })
+    if weapons then
+        local data = {}
+        if type(weapons.data) == 'string' and weapons.data ~= '' then
+            local ok, decoded = pcall(json.decode, weapons.data)
+            if ok and type(decoded) == 'table' then
+                data = decoded
+            end
+        elseif type(weapons.data) == 'table' then
+            data = weapons.data
+        end
+        data.usesTiers = true
+        data.tierGroup = 'weapon'
+        data.grantType = data.grantType or 'weapon'
+        pcall(function()
+            MySQL.update.await(
+                'UPDATE dj_305donator_shop_meta SET data = ? WHERE kind = ? AND meta_id = ?',
+                { json.encode(data), 'category', 'weapons' }
+            )
+        end)
+    end
 end
 
 function DB.GetShopMeta(kind)
@@ -301,7 +358,20 @@ function DB.DeleteShopMeta(kind, id)
     MySQL.update.await('DELETE FROM dj_305donator_shop_meta WHERE kind = ? AND meta_id = ?', { kind, id })
 end
 
-function DB.ReassignListingTier(oldTier, newTier)
+function DB.ReassignListingTier(oldTier, newTier, categories)
+    if type(categories) == 'table' and #categories > 0 then
+        local placeholders = {}
+        local params = { newTier, oldTier }
+        for i = 1, #categories do
+            placeholders[#placeholders + 1] = '?'
+            params[#params + 1] = categories[i]
+        end
+        MySQL.update.await(
+            ('UPDATE dj_305donator_listings SET tier = ? WHERE tier = ? AND category IN (%s)'):format(table.concat(placeholders, ',')),
+            params
+        )
+        return
+    end
     MySQL.update.await('UPDATE dj_305donator_listings SET tier = ? WHERE tier = ?', { newTier, oldTier })
 end
 
@@ -310,7 +380,20 @@ function DB.CountListingsInCategory(category)
     return row and tonumber(row.n) or 0
 end
 
-function DB.CountListingsInTier(tier)
+function DB.CountListingsInTier(tier, categories)
+    if type(categories) == 'table' and #categories > 0 then
+        local placeholders = {}
+        local params = { tier }
+        for i = 1, #categories do
+            placeholders[#placeholders + 1] = '?'
+            params[#params + 1] = categories[i]
+        end
+        local row = MySQL.single.await(
+            ('SELECT COUNT(*) AS n FROM dj_305donator_listings WHERE tier = ? AND category IN (%s)'):format(table.concat(placeholders, ',')),
+            params
+        )
+        return row and tonumber(row.n) or 0
+    end
     local row = MySQL.single.await('SELECT COUNT(*) AS n FROM dj_305donator_listings WHERE tier = ?', { tier })
     return row and tonumber(row.n) or 0
 end
@@ -329,13 +412,9 @@ function DB.EnsureSchema()
         MySQL.query.await('ALTER TABLE dj_305donator_owned MODIFY `tier` VARCHAR(40) DEFAULT NULL')
         MySQL.query.await('ALTER TABLE dj_305donator_purchases MODIFY `tier` VARCHAR(40) DEFAULT NULL')
     end)
-    pcall(function()
-        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'emerald' WHERE LOWER(tier) = 'bronze'")
-        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'sapphire' WHERE LOWER(tier) = 'silver'")
-        MySQL.update.await("UPDATE dj_305donator_listings SET tier = 'blackdiamond' WHERE LOWER(tier) IN ('gold', 'black_diamond', 'black diamond', 'diamond')")
-    end)
+    DB.MigrateDefaultTiers()
     DB.SeedShopMeta()
-    Shop.Apply(DB.GetShopMeta('category'), DB.GetShopMeta('tier'))
+    Shop.Apply(DB.GetShopMeta('category'), DB.GetShopMeta('tier'), DB.GetShopMeta('weapontier'))
     TiersRefresh()
 end
 

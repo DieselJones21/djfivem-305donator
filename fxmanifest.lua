@@ -5,7 +5,7 @@ lua54 'yes'
 name 'djfivem-305donator'
 author 'DieselJones21'
 description 'Rebel Roleplay donator store with Rebel Coins, Tebex commands, custom tabs, vehicle tiers, ox_inventory, and JG garages'
-version '2.0.0'
+version '2.1.0'
 
 shared_scripts {
     'config.lua',

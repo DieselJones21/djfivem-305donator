@@ -89,20 +89,21 @@ local function publicCatalog(includeGangs)
     for i = 1, #categories do
         local cat = categories[i]
         if cat.usesTiers then
-            out[cat.id] = EmptyTierBuckets()
+            out[cat.id] = EmptyTierBuckets(Shop.TierGroup(cat.id))
         else
             out[cat.id] = {}
         end
         if cat.enabled and (cat.gated ~= 'gang' or includeGangs) then
             local src = Catalog[cat.id]
             if cat.usesTiers then
+                local group = Shop.TierGroup(cat.id)
                 if type(src) == 'table' then
                     for tier, list in pairs(src) do
                         if type(list) == 'table' then
                             out[cat.id][tier] = out[cat.id][tier] or {}
                             for n = 1, #list do
                                 list[n].category = cat.id
-                                list[n].tier = NormalizeTier(list[n].tier or tier)
+                                list[n].tier = NormalizeTier(list[n].tier or tier, group)
                                 out[cat.id][list[n].tier] = out[cat.id][list[n].tier] or {}
                                 out[cat.id][list[n].tier][#out[cat.id][list[n].tier] + 1] = publicItem(list[n])
                             end
@@ -394,7 +395,8 @@ end
 local function shopLayout(isAdmin, isGangMember)
     return {
         categories = Shop.ClientCategories(false, isAdmin or isGangMember),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
         tebex = tebexHelp(),
     }
 end
@@ -406,7 +408,8 @@ local function adminBundle()
         codes = DB.ListCodes(),
         listings = Listings.EditorRows(),
         categories = Shop.AdminCategories(),
-        tiers = Shop.AdminTiers(),
+        tiers = Shop.AdminTiers('vehicle'),
+        weaponTiers = Shop.AdminTiers('weapon'),
         tebex = tebexHelp(),
     }
 end
@@ -861,7 +864,8 @@ RegisterDonatorCallback('adminSaveListing', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -913,7 +917,8 @@ RegisterDonatorCallback('adminDeleteListing', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -934,7 +939,8 @@ RegisterDonatorCallback('adminSaveCategory', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -955,7 +961,8 @@ RegisterDonatorCallback('adminDeleteCategory', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -973,7 +980,8 @@ RegisterDonatorCallback('adminMoveCategory', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -987,14 +995,16 @@ RegisterDonatorCallback('adminSaveTier', function(source, payload)
     end
     local actorId, actorName = Framework.GetIdentifier(source)
     DB.InsertLog(actorId, actorName, nil, nil, 'save_tier', { id = tier.id, label = tier.label })
+    local group = Shop.NormalizeGroup(payload and (payload.group or payload.tierGroup))
     return {
         ok = true,
-        message = Locale.tier_saved,
+        message = group == 'weapon' and Locale.weapon_class_saved or Locale.tier_saved,
         catalog = publicCatalog(true),
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -1002,20 +1012,22 @@ RegisterDonatorCallback('adminDeleteTier', function(source, payload)
     if not Framework.IsAdmin(source) then
         return { ok = false, error = 'no_permission', message = Locale.no_permission }
     end
-    local ok, err = Listings.DeleteTier(payload and payload.id)
+    local ok, err = Listings.DeleteTier(payload and payload.id, payload and payload.group)
     if not ok then
         return { ok = false, error = err, message = Locale[err] or Locale.listing_invalid }
     end
     local actorId, actorName = Framework.GetIdentifier(source)
     DB.InsertLog(actorId, actorName, nil, nil, 'delete_tier', { id = payload.id, movedTo = err })
+    local group = Shop.NormalizeGroup(payload and payload.group)
     return {
         ok = true,
-        message = Locale.tier_removed,
+        message = group == 'weapon' and Locale.weapon_class_removed or Locale.tier_removed,
         catalog = publicCatalog(true),
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
@@ -1023,7 +1035,7 @@ RegisterDonatorCallback('adminMoveTier', function(source, payload)
     if not Framework.IsAdmin(source) then
         return { ok = false, error = 'no_permission', message = Locale.no_permission }
     end
-    local tier, err = Listings.MoveTier(payload and payload.id, payload and payload.direction)
+    local tier, err = Listings.MoveTier(payload and payload.id, payload and payload.direction, payload and payload.group)
     if not tier then
         return { ok = false, error = err, message = Locale[err] or Locale.listing_invalid }
     end
@@ -1033,7 +1045,8 @@ RegisterDonatorCallback('adminMoveTier', function(source, payload)
         admin = adminBundle(),
         player = playerSnapshot(source),
         categories = Shop.ClientCategories(false, true),
-        tiers = Shop.ClientTiers(),
+        tiers = Shop.ClientTiers('vehicle'),
+        weaponTiers = Shop.ClientTiers('weapon'),
     }
 end)
 
