@@ -42,8 +42,8 @@ end
 
 function Shop.DefaultCategories()
     return {
-        { id = 'vehicles', label = 'Vehicles', grantType = 'vehicle', usesTiers = true, gated = 'none', timed = false, builtin = true, enabled = true, sort = 10 },
-        { id = 'weapons', label = 'Weapons', grantType = 'weapon', usesTiers = false, gated = 'none', timed = false, builtin = true, enabled = true, sort = 20 },
+        { id = 'vehicles', label = 'Vehicles', grantType = 'vehicle', usesTiers = true, tierGroup = 'vehicle', gated = 'none', timed = false, builtin = true, enabled = true, sort = 10 },
+        { id = 'weapons', label = 'Weapons', grantType = 'weapon', usesTiers = true, tierGroup = 'weapon', gated = 'none', timed = false, builtin = true, enabled = true, sort = 20 },
         { id = 'extras', label = 'Extra Items', grantType = 'item', usesTiers = false, gated = 'none', timed = false, builtin = true, enabled = true, sort = 30 },
         { id = 'bundles', label = 'Bundles', grantType = 'bundle', usesTiers = false, gated = 'none', timed = false, builtin = true, enabled = true, sort = 40 },
         { id = 'gangs', label = 'Gang Store', grantType = 'mixed', usesTiers = false, gated = 'gang', timed = false, builtin = true, enabled = true, sort = 50 },
@@ -54,20 +54,61 @@ end
 
 function Shop.DefaultTiers()
     return {
-        { id = 'emerald', label = 'Emerald', builtin = true, enabled = true, sort = 10 },
-        { id = 'sapphire', label = 'Sapphire', builtin = true, enabled = true, sort = 20 },
-        { id = 'blackdiamond', label = 'Black Diamond', builtin = true, enabled = true, sort = 30 },
+        { id = 'bronze', label = 'Bronze', builtin = true, enabled = true, sort = 10 },
+        { id = 'silver', label = 'Silver', builtin = true, enabled = true, sort = 20 },
+        { id = 'gold', label = 'Gold', builtin = true, enabled = true, sort = 30 },
+    }
+end
+
+function Shop.DefaultWeaponTiers()
+    return {
+        { id = 'melee', label = 'Melee', builtin = true, enabled = true, sort = 10 },
+        { id = 'pistol', label = 'Pistol', builtin = true, enabled = true, sort = 20 },
+        { id = 'smg', label = 'SMG', builtin = true, enabled = true, sort = 30 },
+        { id = 'rifles', label = 'Rifles', builtin = true, enabled = true, sort = 40 },
     }
 end
 
 Shop.TIER_ALIASES = {
-    bronze = 'emerald',
-    silver = 'sapphire',
-    gold = 'blackdiamond',
-    black_diamond = 'blackdiamond',
-    ['black diamond'] = 'blackdiamond',
-    diamond = 'blackdiamond',
+    vehicle = {
+        emerald = 'bronze',
+        sapphire = 'silver',
+        blackdiamond = 'gold',
+        black_diamond = 'gold',
+        ['black diamond'] = 'gold',
+        diamond = 'gold',
+    },
+    weapon = {
+        pistols = 'pistol',
+        smgs = 'smg',
+        rifle = 'rifles',
+        melee_weapons = 'melee',
+    },
 }
+
+function Shop.NormalizeGroup(group)
+    if group == 'weapon' or group == 'weapontier' then
+        return 'weapon'
+    end
+    return 'vehicle'
+end
+
+function Shop.MetaKind(group)
+    return Shop.NormalizeGroup(group) == 'weapon' and 'weapontier' or 'tier'
+end
+
+function Shop.InferTierGroup(cat)
+    if type(cat) ~= 'table' then
+        return 'vehicle'
+    end
+    if cat.tierGroup == 'weapon' or cat.tierGroup == 'vehicle' then
+        return cat.tierGroup
+    end
+    if cat.grantType == 'weapon' then
+        return 'weapon'
+    end
+    return 'vehicle'
+end
 
 local function copyRow(row)
     local out = {}
@@ -87,21 +128,39 @@ local function sortByOrder(list)
     return list
 end
 
+local function applyTierList(rows, defaults)
+    local tiers, tierMap = {}, {}
+    for i = 1, #(rows or {}) do
+        local tier = Shop.TierFromMeta(rows[i])
+        if tier and not tierMap[tier.id] then
+            tiers[#tiers + 1] = tier
+            tierMap[tier.id] = tier
+        end
+    end
+    if #tiers == 0 then
+        for _, row in ipairs(defaults()) do
+            local copy = copyRow(row)
+            tiers[#tiers + 1] = copy
+            tierMap[copy.id] = copy
+        end
+    end
+    return sortByOrder(tiers), tierMap
+end
+
 function Shop.ResetToDefaults()
     Shop.categories = {}
     Shop.categoryMap = {}
     Shop.tiers = {}
     Shop.tierMap = {}
+    Shop.weaponTiers = {}
+    Shop.weaponTierMap = {}
     for _, row in ipairs(Shop.DefaultCategories()) do
         local copy = copyRow(row)
         Shop.categories[#Shop.categories + 1] = copy
         Shop.categoryMap[copy.id] = copy
     end
-    for _, row in ipairs(Shop.DefaultTiers()) do
-        local copy = copyRow(row)
-        Shop.tiers[#Shop.tiers + 1] = copy
-        Shop.tierMap[copy.id] = copy
-    end
+    Shop.tiers, Shop.tierMap = applyTierList(nil, Shop.DefaultTiers)
+    Shop.weaponTiers, Shop.weaponTierMap = applyTierList(nil, Shop.DefaultWeaponTiers)
 end
 
 local function decodeData(raw)
@@ -135,11 +194,21 @@ function Shop.CategoryFromMeta(row)
     if gated ~= 'gang' and gated ~= 'admin' then
         gated = 'none'
     end
+    local usesTiers = data.usesTiers == true
+    local tierGroup = tostring(data.tierGroup or '')
+    if tierGroup ~= 'weapon' and tierGroup ~= 'vehicle' then
+        tierGroup = grantType == 'weapon' and 'weapon' or 'vehicle'
+    end
+    if id == 'weapons' and data.usesTiers == nil then
+        usesTiers = true
+        tierGroup = 'weapon'
+    end
     return {
         id = id,
         label = trim(row.label) ~= '' and trim(row.label) or id,
         grantType = grantType,
-        usesTiers = data.usesTiers == true,
+        usesTiers = usesTiers,
+        tierGroup = usesTiers and tierGroup or nil,
         gated = gated,
         timed = data.timed == true,
         builtin = data.builtin == true,
@@ -166,7 +235,7 @@ function Shop.TierFromMeta(row)
     }
 end
 
-function Shop.Apply(categoryRows, tierRows)
+function Shop.Apply(categoryRows, vehicleTierRows, weaponTierRows)
     local categories, categoryMap = {}, {}
     for i = 1, #(categoryRows or {}) do
         local cat = Shop.CategoryFromMeta(categoryRows[i])
@@ -180,26 +249,10 @@ function Shop.Apply(categoryRows, tierRows)
         categories, categoryMap = Shop.categories, Shop.categoryMap
     end
 
-    local tiers, tierMap = {}, {}
-    for i = 1, #(tierRows or {}) do
-        local tier = Shop.TierFromMeta(tierRows[i])
-        if tier and not tierMap[tier.id] then
-            tiers[#tiers + 1] = tier
-            tierMap[tier.id] = tier
-        end
-    end
-    if #tiers == 0 then
-        for _, row in ipairs(Shop.DefaultTiers()) do
-            local copy = copyRow(row)
-            tiers[#tiers + 1] = copy
-            tierMap[copy.id] = copy
-        end
-    end
-
     Shop.categories = sortByOrder(categories)
     Shop.categoryMap = categoryMap
-    Shop.tiers = sortByOrder(tiers)
-    Shop.tierMap = tierMap
+    Shop.tiers, Shop.tierMap = applyTierList(vehicleTierRows, Shop.DefaultTiers)
+    Shop.weaponTiers, Shop.weaponTierMap = applyTierList(weaponTierRows, Shop.DefaultWeaponTiers)
 end
 
 function Shop.GetCategory(id)
@@ -230,6 +283,36 @@ function Shop.UsesTiers(id)
     return cat and cat.usesTiers == true
 end
 
+function Shop.TierGroup(id)
+    return Shop.InferTierGroup(Shop.GetCategory(id))
+end
+
+function Shop.CategoryIdsForGroup(group)
+    group = Shop.NormalizeGroup(group)
+    local out = {}
+    for i = 1, #Shop.AllCategories() do
+        local cat = Shop.categories[i]
+        if cat.usesTiers and Shop.TierGroup(cat.id) == group then
+            out[#out + 1] = cat.id
+        end
+    end
+    return out
+end
+
+function Shop.TiersOf(group)
+    if Shop.NormalizeGroup(group) == 'weapon' then
+        return Shop.weaponTiers or {}
+    end
+    return Shop.tiers or {}
+end
+
+function Shop.TierMapOf(group)
+    if Shop.NormalizeGroup(group) == 'weapon' then
+        return Shop.weaponTierMap or {}
+    end
+    return Shop.tierMap or {}
+end
+
 function Shop.GrantType(id)
     local cat = Shop.GetCategory(id)
     return cat and cat.grantType or 'item'
@@ -245,39 +328,51 @@ function Shop.IsTimed(id)
     return cat and cat.timed == true
 end
 
-function Shop.EnabledTiers()
+function Shop.EnabledTiers(group)
     local out = {}
-    for i = 1, #(Shop.tiers or {}) do
-        local tier = Shop.tiers[i]
+    local list = Shop.TiersOf(group)
+    for i = 1, #list do
+        local tier = list[i]
         if tier.enabled then
             out[#out + 1] = tier
         end
     end
     if #out == 0 then
-        return Shop.DefaultTiers()
+        return Shop.NormalizeGroup(group) == 'weapon' and Shop.DefaultWeaponTiers() or Shop.DefaultTiers()
     end
     return out
 end
 
-function Shop.TierIds()
+function Shop.TierIds(group)
     local ids = {}
-    for i = 1, #Shop.EnabledTiers() do
-        ids[#ids + 1] = Shop.EnabledTiers()[i].id
+    local tiers = Shop.EnabledTiers(group)
+    for i = 1, #tiers do
+        ids[#ids + 1] = tiers[i].id
     end
     return ids
 end
 
-function Shop.DefaultTier()
-    local tiers = Shop.EnabledTiers()
-    return tiers[1] and tiers[1].id or 'emerald'
+function Shop.DefaultTier(group)
+    local tiers = Shop.EnabledTiers(group)
+    if Shop.NormalizeGroup(group) == 'weapon' then
+        return tiers[1] and tiers[1].id or 'pistol'
+    end
+    return tiers[1] and tiers[1].id or 'bronze'
 end
 
-function Shop.IsTier(id)
-    return id and Shop.tierMap[id] ~= nil and Shop.tierMap[id].enabled ~= false
+function Shop.IsTier(id, group)
+    local map = Shop.TierMapOf(group)
+    return id and map[id] ~= nil and map[id].enabled ~= false
 end
 
-function Shop.GetTier(id)
-    return id and Shop.tierMap[id] or nil
+function Shop.GetTier(id, group)
+    if not id then
+        return nil
+    end
+    if group then
+        return Shop.TierMapOf(group)[id]
+    end
+    return (Shop.tierMap and Shop.tierMap[id]) or (Shop.weaponTierMap and Shop.weaponTierMap[id]) or nil
 end
 
 function Shop.ClientCategories(isAdmin, isGangMember)
@@ -291,6 +386,7 @@ function Shop.ClientCategories(isAdmin, isGangMember)
                     label = cat.label,
                     grantType = cat.grantType,
                     usesTiers = cat.usesTiers,
+                    tierGroup = cat.usesTiers and Shop.InferTierGroup(cat) or nil,
                     gated = cat.gated,
                     timed = cat.timed,
                     builtin = cat.builtin,
@@ -303,10 +399,11 @@ function Shop.ClientCategories(isAdmin, isGangMember)
     return out
 end
 
-function Shop.ClientTiers()
+function Shop.ClientTiers(group)
     local out = {}
-    for i = 1, #Shop.EnabledTiers() do
-        local tier = Shop.EnabledTiers()[i]
+    local tiers = Shop.EnabledTiers(group)
+    for i = 1, #tiers do
+        local tier = tiers[i]
         out[#out + 1] = {
             id = tier.id,
             label = tier.label,
@@ -322,10 +419,11 @@ function Shop.AdminCategories()
     return Shop.ClientCategories(true, true)
 end
 
-function Shop.AdminTiers()
+function Shop.AdminTiers(group)
     local out = {}
-    for i = 1, #(Shop.tiers or {}) do
-        local tier = Shop.tiers[i]
+    local list = Shop.TiersOf(group)
+    for i = 1, #list do
+        local tier = list[i]
         out[#out + 1] = {
             id = tier.id,
             label = tier.label,
@@ -341,6 +439,7 @@ function Shop.EncodeCategory(cat)
     return json.encode({
         grantType = cat.grantType,
         usesTiers = cat.usesTiers and true or false,
+        tierGroup = cat.usesTiers and Shop.InferTierGroup(cat) or nil,
         gated = cat.gated or 'none',
         timed = cat.timed and true or false,
         builtin = cat.builtin and true or false,

@@ -10,8 +10,8 @@ function CatalogReset()
     }
     local categories = Shop and Shop.AllCategories and Shop.AllCategories() or {}
     if #categories == 0 then
-        Catalog.vehicles = EmptyTierBuckets()
-        Catalog.weapons = {}
+        Catalog.vehicles = EmptyTierBuckets('vehicle')
+        Catalog.weapons = EmptyTierBuckets('weapon')
         Catalog.extras = {}
         Catalog.bundles = {}
         Catalog.exclusives = {}
@@ -22,7 +22,7 @@ function CatalogReset()
     for i = 1, #categories do
         local cat = categories[i]
         if cat.usesTiers then
-            Catalog[cat.id] = EmptyTierBuckets()
+            Catalog[cat.id] = EmptyTierBuckets(Shop.TierGroup and Shop.TierGroup(cat.id) or cat.tierGroup)
         else
             Catalog[cat.id] = {}
         end
@@ -42,17 +42,15 @@ function CatalogPut(item)
         return
     end
     if Shop and Shop.UsesTiers and Shop.UsesTiers(category) then
-        local tier = NormalizeTier(item.tier)
+        local group = Shop.TierGroup and Shop.TierGroup(category) or 'vehicle'
+        local tier = NormalizeTier(item.tier, group)
         item.tier = tier
-        Catalog[category] = Catalog[category] or EmptyTierBuckets()
+        Catalog[category] = Catalog[category] or EmptyTierBuckets(group)
         if not Catalog[category][tier] then
             Catalog[category][tier] = {}
         end
         Catalog[category][tier][#Catalog[category][tier] + 1] = item
         return
-    end
-    if category == 'weapons' then
-        item.tier = nil
     end
     Catalog[category] = Catalog[category] or {}
     if type(Catalog[category]) == 'table' and Catalog[category][1] == nil and next(Catalog[category]) then
@@ -84,7 +82,8 @@ function CatalogAll()
             return
         end
         if Shop and Shop.UsesTiers and Shop.UsesTiers(category) then
-            local tiers = Shop.EnabledTiers and Shop.EnabledTiers() or {}
+            local group = Shop.TierGroup and Shop.TierGroup(category) or 'vehicle'
+            local tiers = Shop.EnabledTiers and Shop.EnabledTiers(group) or {}
             local seen = {}
             for i = 1, #tiers do
                 local id = tiers[i].id
